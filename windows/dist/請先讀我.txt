@@ -1,0 +1,31 @@
+﻿════════════════════════════════════════════════
+  MiniRemote 安裝說明(Windows 版)
+════════════════════════════════════════════════
+
+1. 先在這台 Windows 裝好 Tailscale 並登入
+   https://tailscale.com/download/windows
+   (帳號要跟筆電同一個 Google 帳號)
+   如果以前裝過但很久沒開,打開後可能要重新登入一次。
+
+2. 把這個 MiniRemote-Windows 資料夾複製到這台電腦(隨身碟或雲端都可以)
+
+3. 在資料夾裡的空白處按右鍵 → 「在終端機中開啟」
+   (舊版 Windows 沒有這個選項的話:按住 Shift 再按右鍵 → 「在這裡開啟 PowerShell 視窗」)
+
+4. 把下面這一整行複製貼上,按 Enter
+
+      powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
+
+   它會自動:複製檔案、下載 ffmpeg(約 100 MB)、產生密碼、
+   設定開機自動啟動、設定 Tailscale https 網址。
+
+5. 最後會印出「連線密碼」和「連線網址」(https 開頭),抄下來。
+   在筆電的 Chrome 打開那個網址、輸入密碼就能用了。
+
+Windows 上建議的設定:
+   - 設定 → 帳戶 → 登入選項 → 「需要登入」改成「永不」
+     (不然螢幕鎖定後遠端會被擋在外面)
+   - 設定 → 系統 → 電源 → 「螢幕與睡眠」的睡眠設成「永不」
+   - 顯示卡:NVIDIA / Intel / AMD 都會自動用硬體編碼,沒有就用 CPU(較吃資源)
+
+有問題就打開 README.md。

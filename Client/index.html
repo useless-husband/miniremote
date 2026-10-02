@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniRemote 遠端控制</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0d10; --panel:#161a20; --line:#2a3038; --muted:#9aa4b2; --accent:#2f6fed; }
+  html, body { margin:0; height:100%; background:var(--bg); color:#e6e6e6; font:14px -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif; overflow:hidden; }
+  #login { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:10; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:28px 32px; width:320px; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+  .card h1 { margin:0 0 6px; font-size:20px; }
+  .card p { margin:0 0 16px; color:var(--muted); }
+  input[type=password], input[type=text] { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:#0f1216; color:#fff; font-size:15px; }
+  button { padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:#232a33; color:#fff; cursor:pointer; font-size:13px; }
+  button:hover { background:#2c3540; }
+  button.primary { background:var(--accent); border-color:var(--accent); width:100%; padding:10px; font-size:15px; margin-top:12px; }
+  button.small { padding:3px 8px; font-size:12px; }
+  .err { color:#ff6b6b; min-height:18px; margin-top:8px; }
+  .hint { color:var(--muted); font-size:12px; margin-top:6px; line-height:1.5; }
+  #bar { position:fixed; top:0; left:0; right:0; display:flex; gap:8px; align-items:center; padding:6px 10px; background:rgba(22,26,32,.96); border-bottom:1px solid var(--line); z-index:5; flex-wrap:wrap; transition:transform .2s; }
+  #bar.hidden { transform:translateY(-100%); }
+  #bar label { display:flex; align-items:center; gap:4px; color:var(--muted); white-space:nowrap; }
+  #bar select { background:#0f1216; color:#fff; border:1px solid var(--line); border-radius:6px; padding:4px 6px; }
+  #bar input[type=range] { width:70px; }
+  #bar input[type=text] { width:190px; padding:5px 8px; font-size:13px; }
+  #stats { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; font-size:12px; }
+  #hot { position:fixed; top:0; left:0; right:0; height:6px; z-index:6; }
+  #tab { position:fixed; top:0; left:50%; transform:translateX(-50%); background:rgba(22,26,32,.9); border:1px solid var(--line); border-top:none; border-radius:0 0 8px 8px; padding:2px 12px; font-size:12px; color:var(--muted); cursor:pointer; z-index:6; display:none; }
+  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #screen { cursor:none; outline:none; touch-action:none; display:block; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#666; margin-right:5px; }
+  .dot.on { background:#3ddc84; } .dot.bad { background:#ff6b6b; } .dot.wait { background:#f5b642; }
+  /* 檔案面板 */
+  #files { position:fixed; top:0; right:0; bottom:0; width:380px; max-width:90vw; background:var(--panel); border-left:1px solid var(--line); z-index:7; display:none; flex-direction:column; box-shadow:-10px 0 30px rgba(0,0,0,.4); }
+  #files.open { display:flex; }
+  #files header { padding:10px 12px; border-bottom:1px solid var(--line); display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  #files header b { flex:1; }
+  #crumb { padding:8px 12px; font-size:12px; color:var(--muted); word-break:break-all; border-bottom:1px solid var(--line); display:flex; gap:6px; align-items:center; }
+  #crumb span { flex:1; }
+  #flist { flex:1; overflow:auto; }
+  .row { display:flex; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid #1d2229; cursor:pointer; }
+  .row:hover { background:#1d232b; }
+  .row .ic { width:20px; text-align:center; }
+  .row .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .sz { color:var(--muted); font-size:12px; white-space:nowrap; }
+  .row .dl { opacity:0; }
+  .row:hover .dl { opacity:1; }
+  #drop { padding:10px 12px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; text-align:center; }
+  #drop.over { background:#1e2a44; color:#fff; }
+  #prog { font-size:12px; color:var(--muted); padding:0 12px 8px; white-space:pre-line; }
+</style>
+</head>
+<body>
+<div id="login">
+  <div class="card">
+    <h1>MiniRemote</h1>
+    <p id="loginSub">連線到家裡的電腦</p>
+    <div id="peerLinks" class="hint" style="margin-bottom:10px"></div>
+    <input id="pw" type="password" placeholder="連線密碼" autocomplete="current-password">
+    <label style="display:flex;gap:6px;align-items:center;margin-top:10px;color:var(--muted);font-size:13px"><input id="remember" type="checkbox" checked> 保持登入(這台瀏覽器 30 天內不用再輸入)</label>
+    <button id="connectBtn" class="primary">連線</button>
+    <div id="loginErr" class="err"></div>
+    <div id="secureHint" class="hint"></div>
+  </div>
+</div>
+<div id="hot"></div>
+<div id="tab">▼ 顯示工具列</div>
+<div id="bar">
+  <span id="status"><span class="dot"></span>未連線</span>
+  <label id="peerLabel" style="display:none">電腦 <select id="peerSel"></select></label>
+  <label>模式 <select id="modeSel"><option value="hq">高畫質</option><option value="ultra">極致 60fps</option><option value="fps120">120fps(實驗)</option><option value="bal">平衡</option><option value="lite">省流量</option><option value="custom">自訂</option></select></label>
+  <label>幀率 <select id="fpsSel"></select></label>
+  <label>解析度 <select id="resSel"></select></label>
+  <label>編碼 <select id="codecSel"><option value="auto">自動</option><option value="hevc">HEVC</option><option value="h264">H.264</option><option value="jpeg">JPEG</option></select></label>
+  <label id="brLabel">位元率 <select id="brSel"></select> <input id="autoBr" type="checkbox" checked title="網路塞就自動降,順了再升回來"> 自動</label>
+  <label id="qLabel">畫質 <input id="qRange" type="range" min="0.2" max="0.95" step="0.05"><span id="qVal"></span></label>
+  <label id="dispLabel">顯示器 <select id="dispSel"></select></label>
+  <label id="cmdCtrlLabel" style="display:none" title="Mac 鍵盤的 Cmd 當成 Windows 的 Ctrl(Cmd+C = Ctrl+C)"><input id="cmdCtrl" type="checkbox" checked> Cmd 當 Ctrl</label>
+  <input id="txt" type="text" placeholder="打字後按 Enter 送到遠端(可中文)">
+  <button id="filesBtn">檔案</button>
+  <button id="fsBtn">全螢幕</button>
+  <button id="hideBtn">隱藏</button>
+  <button id="logoutBtn" title="註銷這台瀏覽器的登入">登出</button>
+  <span id="stats"></span>
+</div>
+<div id="stage"><canvas id="screen" tabindex="0" width="1280" height="720"></canvas></div>
+
+<aside id="files">
+  <header>
+    <b>遠端檔案</b>
+    <label style="font-size:12px;color:var(--muted)"><input id="showHidden" type="checkbox"> 隱藏檔</label>
+    <button id="zipBtn" class="small" title="把目前資料夾打包成 zip 下載">下載整個資料夾</button>
+    <button id="upBtn" class="small">上傳…</button>
+    <button id="closeFiles" class="small">✕</button>
+    <input id="upInput" type="file" multiple style="display:none">
+  </header>
+  <div id="crumb"><button id="upDir" class="small">↑ 上一層</button><span id="curPath"></span></div>
+  <div id="flist"></div>
+  <div id="prog"></div>
+  <div id="drop">把檔案拖到這裡就會上傳到目前資料夾</div>
+</aside>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const canvas = $('#screen');
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+const bar = $('#bar'), tab = $('#tab'), statusEl = $('#status'), statsEl = $('#stats');
+const modeSel = $('#modeSel'), fpsSel = $('#fpsSel'), resSel = $('#resSel'), codecSel = $('#codecSel'), brSel = $('#brSel'), autoBr = $('#autoBr');
+const qRange = $('#qRange'), qVal = $('#qVal'), dispSel = $('#dispSel'), txt = $('#txt');
+const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+const webcodecs = typeof VideoDecoder !== 'undefined';
+
+let ws = null, authed = false, manualClose = false, reconnectTimer = null;
+let hello = null, currentCodec = 'jpeg', serverCodecs = [];
+let decoder = null, decoderKey = '', waitingKey = true, decodeErrors = 0;
+let pendingFrame = null, rafId = 0;
+let jpegBusy = false, jpegNext = null;
+let rxBytes = 0, paintedFrames = 0, rtt = 0, lastKeyReq = 0, lastStats = null;
+let frameW = 0, frameH = 0, barHidden = false, suppress = false;
+let token = null;
+try { token = localStorage.getItem('mr_token'); } catch {}
+
+function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function setStatus(text, cls) { statusEl.innerHTML = `<span class="dot ${cls || ''}"></span>${text}`; }
+function setCookie(t) {
+  document.cookie = t ? `mr_session=${t}; path=/; SameSite=Strict${location.protocol === 'https:' ? '; Secure' : ''}; max-age=${30*86400}`
+                      : 'mr_session=; path=/; max-age=0';
+}
+
+if (!webcodecs) {
+  $('#secureHint').textContent = isSecure ? '這個瀏覽器不支援影片硬體解碼,只能用 JPEG 模式。建議改用 Chrome。'
+                                          : '這個網址不是 https,只能用 JPEG 模式(流量大)。請改用 Tailscale 的 https 網址。';
+  codecSel.querySelector('[value=hevc]').disabled = true;
+  codecSel.querySelector('[value=h264]').disabled = true;
+}
+
+// ---------- 判斷最佳編碼 ----------
+async function supports(codec) {
+  if (!webcodecs) return false;
+  try { const r = await VideoDecoder.isConfigSupported({ codec, codedWidth: 1920, codedHeight: 1080 }); return !!r.supported; } catch { return false; }
+}
+let hevcOK = false, h264OK = false;
+const probe = (async () => { hevcOK = await supports('hvc1.1.6.L153.B0'); h264OK = await supports('avc1.640033'); })();
+async function pickCodec() {
+  await probe;
+  const want = codecSel.value;
+  if (want !== 'auto') return want;
+  if (hevcOK) return 'hevc';
+  if (h264OK) return 'h264';
+  return 'jpeg';
+}
+
+// ---------- 連線 ----------
+async function connect(usePassword) {
+  $('#loginErr').textContent = '';
+  setStatus('連線中…', 'wait');
+  manualClose = false;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const codec = await pickCodec();
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    currentCodec = codec;
+    if (!usePassword && token) send({ type: 'auth', token, codec });
+    else send({ type: 'auth', password: $('#pw').value, codec });
+  };
+  ws.onmessage = e => { if (typeof e.data === 'string') handleText(JSON.parse(e.data)); else handleBinary(e.data); };
+  ws.onclose = () => {
+    const wasAuthed = authed;
+    authed = false;
+    resetDecoder();
+    setStatus('已斷線', 'bad');
+    if (wasAuthed && !manualClose) {
+      setStatus('斷線,3 秒後重連…', 'wait');
+      reconnectTimer = setTimeout(() => connect(false), 3000);
+    } else {
+      if (!wasAuthed && !manualClose && !$('#loginErr').textContent)
+        $('#loginErr').textContent = '連不上伺服器。請確認家裡的 Mac 有開機、MiniRemote 有在跑、兩邊 Tailscale 都有連線。';
+      $('#login').style.display = 'flex';
+    }
+  };
+}
+
+function disconnect() { manualClose = true; clearTimeout(reconnectTimer); send({ type: 'release' }); if (ws) ws.close(); }
+
+function handleText(m) {
+  switch (m.type) {
+    case 'auth':
+      if (m.ok) {
+        authed = true;
+        if (m.token) {
+          token = m.token;
+          try { if ($('#remember').checked) localStorage.setItem('mr_token', token); else localStorage.removeItem('mr_token'); } catch {}
+        }
+        setCookie(token);
+        $('#login').style.display = 'none';
+        $('#pw').value = '';
+        setStatus('已連線', 'on');
+        canvas.focus();
+      } else {
+        manualClose = true;
+        if (m.reason === 'token') { token = null; try { localStorage.removeItem('mr_token'); } catch {} $('#loginErr').textContent = '登入已過期,請重新輸入密碼'; }
+        else if (m.reason === 'locked') $('#loginErr').textContent = `錯太多次,鎖定中,${m.seconds} 秒後再試`;
+        else if (m.reason === 'tailscale') $('#loginErr').textContent = '這個 Tailscale 帳號不在允許名單';
+        else $('#loginErr').textContent = '密碼錯誤';
+      }
+      break;
+    case 'hello':
+      hello = m; serverCodecs = m.codecs || []; fillOptions(m); applyConfig(m.current);
+      setStatus('已連線 · ' + (m.name || (m.os === 'windows' ? 'Windows' : 'Mac')), 'on');
+      document.title = 'MiniRemote · ' + (m.name || '');
+      $('#cmdCtrlLabel').style.display = m.os === 'windows' ? '' : 'none';
+      if (m.cmdAsCtrl !== undefined) $('#cmdCtrl').checked = !!m.cmdAsCtrl;
+      fillPeers(m.peers || []);
+      break;
+    case 'config': applyConfig(m); break;
+    case 'stats': lastStats = m; break;
+    case 'pong': rtt = Math.round(performance.now() - m.t); break;
+    case 'logout': break;
+  }
+}
+
+function fillPeers(peers) {
+  const here = { name: (hello && hello.name) || location.host, url: location.origin + '/' };
+  const list = [here, ...peers.filter(p => p.url && !p.url.startsWith(location.origin))];
+  try { localStorage.setItem('mr_peers', JSON.stringify(list)); } catch {}
+  $('#peerLabel').style.display = list.length > 1 ? '' : 'none';
+  $('#peerSel').innerHTML = list.map(p => `<option value="${p.url}">${p.name}</option>`).join('');
+  $('#peerSel').value = here.url;
+  renderPeerLinks(list);
+}
+function renderPeerLinks(list) {
+  const others = list.filter(p => !p.url.startsWith(location.origin));
+  $('#peerLinks').innerHTML = others.length ? '切換到其他電腦:' + others.map(p => `<a href="${p.url}" style="color:#7fb0ff;margin-left:6px">${p.name}</a>`).join('') : '';
+}
+$('#peerSel').onchange = () => { const u = $('#peerSel').value; if (u && !u.startsWith(location.origin)) { disconnect(); location.href = u; } };
+$('#cmdCtrl').onchange = () => { sendConfig({ cmdAsCtrl: $('#cmdCtrl').checked }, true); canvas.focus(); };
+try { const saved = JSON.parse(localStorage.getItem('mr_peers') || '[]'); if (saved.length) renderPeerLinks(saved); } catch {}
+
+function fillOptions(h) {
+  suppress = true;
+  fpsSel.innerHTML = h.fpsOptions.map(f => `<option value="${f}">${f} fps${f > 60 ? '(實驗)' : ''}</option>`).join('');
+  resSel.innerHTML = h.presets.map(([w, hh], i) => `<option value="${w}x${hh}">${w}×${hh}${i === 0 ? '(原生)' : ''}</option>`).join('');
+  brSel.innerHTML = h.bitrateOptions.map(b => `<option value="${b}">${b / 1000} Mbps</option>`).join('');
+  dispSel.innerHTML = (h.displays || []).map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  $('#dispLabel').style.display = (h.displays || []).length > 1 ? '' : 'none';
+  codecSel.querySelector('[value=hevc]').disabled = !(serverCodecs.includes('hevc') && hevcOK);
+  codecSel.querySelector('[value=h264]').disabled = !h264OK;
+  $('#filesBtn').style.display = h.files ? '' : 'none';
+  suppress = false;
+}
+
+function applyConfig(c) {
+  if (!c) return;
+  suppress = true;
+  setSelect(fpsSel, String(c.fps), `${c.fps} fps`);
+  setSelect(resSel, `${c.width}x${c.height}`, `${c.width}×${c.height}`);
+  setSelect(brSel, String(c.bitrateKbps), `${c.bitrateKbps / 1000} Mbps`);
+  autoBr.checked = !!c.autoBitrate;
+  qRange.value = c.quality; qVal.textContent = Math.round(c.quality * 100) + '%';
+  if (c.display !== undefined) setSelect(dispSel, String(c.display), null);
+  if (c.codec && c.codec !== currentCodec) { currentCodec = c.codec; resetDecoder(); }
+  $('#brLabel').style.display = currentCodec === 'jpeg' ? 'none' : '';
+  $('#qLabel').style.display = currentCodec === 'jpeg' ? '' : 'none';
+  suppress = false;
+}
+
+function setSelect(sel, value, labelIfMissing) {
+  if (![...sel.options].some(o => o.value === value)) {
+    if (labelIfMissing === null) return;
+    const o = document.createElement('option'); o.value = value; o.textContent = labelIfMissing; sel.appendChild(o);
+  }
+  sel.value = value;
+}
+
+function blurSelect() { setTimeout(() => { if (document.activeElement && document.activeElement.tagName === 'SELECT') { document.activeElement.blur(); canvas.focus(); } }, 0); }
+function sendConfig(patch, keepMode) {
+  if (suppress || !authed) return;
+  if (!keepMode) modeSel.value = 'custom';
+  send({ type: 'config', ...patch });
+  blurSelect();
+}
+fpsSel.onchange = () => sendConfig({ fps: +fpsSel.value });
+resSel.onchange = () => { const [w, h] = resSel.value.split('x').map(Number); sendConfig({ width: w, height: h }); };
+brSel.onchange = () => sendConfig({ bitrateKbps: +brSel.value });
+autoBr.onchange = () => sendConfig({ autoBitrate: autoBr.checked }, true);
+qRange.oninput = () => { qVal.textContent = Math.round(qRange.value * 100) + '%'; };
+qRange.onchange = () => sendConfig({ quality: +qRange.value });
+dispSel.onchange = () => sendConfig({ display: +dispSel.value }, true);
+codecSel.onchange = async () => { const c = await pickCodec(); if (c !== currentCodec) { currentCodec = c; resetDecoder(); sendConfig({ codec: c }, true); } };
+
+// 一鍵模式:依伺服器提供的解析度預設檔挑
+modeSel.onchange = () => {
+  if (!hello) return;
+  const presets = hello.presets;
+  const pick = maxH => presets.find(p => p[1] <= maxH) || presets[presets.length - 1];
+  let cfg;
+  if (modeSel.value === 'hq') cfg = { width: presets[0][0], height: presets[0][1], fps: 30, bitrateKbps: currentCodec === 'hevc' ? 16000 : 24000, autoBitrate: true };
+  else if (modeSel.value === 'ultra') cfg = { width: presets[0][0], height: presets[0][1], fps: 60, bitrateKbps: currentCodec === 'hevc' ? 30000 : 40000, autoBitrate: true };
+  else if (modeSel.value === 'fps120') { const p = pick(1440); cfg = { width: p[0], height: p[1], fps: 120, bitrateKbps: 30000, autoBitrate: true }; }
+  else if (modeSel.value === 'bal') { const p = pick(1080); cfg = { width: p[0], height: p[1], fps: 30, bitrateKbps: 6000, autoBitrate: true }; }
+  else if (modeSel.value === 'lite') { const p = pick(720); cfg = { width: p[0], height: p[1], fps: 15, bitrateKbps: 1500, autoBitrate: true, quality: 0.4 }; }
+  if (cfg) sendConfig(cfg, true);
+};
+
+// ---------- 影像:二進位訊息 ----------
+// 格式:type(1) flags(1) width(2) height(2) pts_us(8) descLen(2) [avcC/hvcC] payload;type 1=H.264 2=JPEG 3=HEVC
+function handleBinary(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  if (u8.length < 16) return;
+  const type = u8[0], key = (u8[1] & 1) === 1, w = dv.getUint16(2), h = dv.getUint16(4);
+  const ts = Number(dv.getBigUint64(6));
+  const dl = dv.getUint16(14);
+  const desc = dl ? u8.slice(16, 16 + dl) : null;
+  const payload = u8.subarray(16 + dl);
+  rxBytes += buf.byteLength;
+  if (type === 1 || type === 3) handleVideo(type === 3 ? 'hevc' : 'h264', key, w, h, ts, desc, payload);
+  else if (type === 2) handleJPEG(payload);
+}
+
+function requestKey() { const now = performance.now(); if (now - lastKeyReq > 500) { lastKeyReq = now; send({ type: 'key' }); } }
+
+function resetDecoder() {
+  if (decoder) { try { decoder.close(); } catch {} }
+  decoder = null; decoderKey = ''; waitingKey = true;
+  if (pendingFrame) { try { pendingFrame.close(); } catch {} pendingFrame = null; }
+}
+
+const hex = n => n.toString(16).padStart(2, '0');
+function avcCodecString(d) { return `avc1.${hex(d[1])}${hex(d[2])}${hex(d[3])}`; }
+function hevcCodecString(d) {
+  const b = d[1], space = b >> 6, tier = (b >> 5) & 1, profile = b & 0x1F;
+  let compat = ((d[2] << 24) | (d[3] << 16) | (d[4] << 8) | d[5]) >>> 0, rev = 0;
+  for (let i = 0; i < 32; i++) { rev = ((rev << 1) | (compat & 1)) >>> 0; compat >>>= 1; }
+  const cons = Array.from(d.subarray(6, 12)); while (cons.length > 1 && cons[cons.length - 1] === 0) cons.pop();
+  return `hvc1.${['', 'A', 'B', 'C'][space]}${profile}.${rev.toString(16).toUpperCase()}.${tier ? 'H' : 'L'}${d[12]}.${cons.map(x => hex(x).toUpperCase()).join('.')}`;
+}
+
+function ensureDecoder(kind, desc, w, h) {
+  const key = kind + '|' + Array.from(desc).join(',') + `|${w}x${h}`;
+  if (decoder && decoderKey === key && decoder.state === 'configured') return true;
+  resetDecoder();
+  const codec = kind === 'hevc' ? hevcCodecString(desc) : avcCodecString(desc);
+  try {
+    decoder = new VideoDecoder({
+      output: onDecodedFrame,
+      error: e => {
+        console.error('解碼錯誤', codec, e);
+        decodeErrors++;
+        resetDecoder();
+        if (decodeErrors >= 3 && codecSel.value === 'auto') {
+          const next = kind === 'hevc' ? (h264OK ? 'h264' : 'jpeg') : 'jpeg';
+          console.warn(`${kind} 解碼一直失敗,改用 ${next}`);
+          currentCodec = next; sendConfig({ codec: next }, true);
+        } else requestKey();
+      },
+    });
+    decoder.configure({ codec, codedWidth: w, codedHeight: h, description: desc, optimizeForLatency: true });
+    decoderKey = key;
+    return true;
+  } catch (e) { console.error('無法建立解碼器', codec, e); decoder = null; return false; }
+}
+
+function handleVideo(kind, key, w, h, ts, desc, payload) {
+  if (currentCodec !== kind) return;
+  if (key && desc) { if (!ensureDecoder(kind, desc, w, h)) return; }
+  if (!decoder || decoder.state !== 'configured') { requestKey(); return; }
+  if (waitingKey && !key) { requestKey(); return; }
+  waitingKey = false;
+  try { decoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: ts, data: payload })); }
+  catch (e) { console.error(e); waitingKey = true; requestKey(); }
+}
+
+function onDecodedFrame(frame) {
+  decodeErrors = 0;
+  if (pendingFrame) pendingFrame.close();
+  pendingFrame = frame;
+  if (!rafId) rafId = requestAnimationFrame(paint);
+}
+function paint() {
+  rafId = 0;
+  const f = pendingFrame; pendingFrame = null;
+  if (!f) return;
+  fitCanvas(f.displayWidth, f.displayHeight);
+  ctx.drawImage(f, 0, 0);
+  f.close();
+  paintedFrames++;
+}
+
+function handleJPEG(payload) {
+  if (currentCodec !== 'jpeg') return;
+  const blob = new Blob([payload], { type: 'image/jpeg' });
+  if (jpegBusy) { jpegNext = blob; return; }
+  drawJPEG(blob);
+}
+function drawJPEG(blob) {
+  jpegBusy = true;
+  createImageBitmap(blob).then(bmp => { fitCanvas(bmp.width, bmp.height); ctx.drawImage(bmp, 0, 0); bmp.close(); paintedFrames++; })
+    .catch(() => {}).finally(() => { jpegBusy = false; if (jpegNext) { const n = jpegNext; jpegNext = null; drawJPEG(n); } });
+}
+
+// ---------- 版面 ----------
+function fitCanvas(w, h) { if (w !== frameW || h !== frameH) { frameW = w; frameH = h; canvas.width = w; canvas.height = h; } layout(); }
+function layout() {
+  if (!frameW) return;
+  const top = (barHidden || document.fullscreenElement) ? 0 : bar.offsetHeight;
+  const right = $('#files').classList.contains('open') ? $('#files').offsetWidth : 0;
+  const cw = window.innerWidth - right, ch = window.innerHeight - top;
+  const scale = Math.min(cw / frameW, ch / frameH);
+  canvas.style.width = Math.floor(frameW * scale) + 'px';
+  canvas.style.height = Math.floor(frameH * scale) + 'px';
+  $('#stage').style.top = top + 'px';
+  $('#stage').style.right = right + 'px';
+}
+window.addEventListener('resize', layout);
+document.addEventListener('fullscreenchange', () => { setBarHidden(!!document.fullscreenElement); layout(); });
+function setBarHidden(h) { barHidden = h; bar.classList.toggle('hidden', h); tab.style.display = h ? 'block' : 'none'; layout(); }
+$('#hideBtn').onclick = () => setBarHidden(true);
+tab.onclick = () => setBarHidden(false);
+$('#hot').onmouseenter = () => { if (barHidden) setBarHidden(false); };
+bar.addEventListener('mouseleave', () => { if (document.fullscreenElement) setBarHidden(true); });
+$('#fsBtn').onclick = async () => {
+  try { await document.documentElement.requestFullscreen(); if (navigator.keyboard && navigator.keyboard.lock) await navigator.keyboard.lock(); } catch (e) { console.warn(e); }
+  canvas.focus();
+};
+$('#logoutBtn').onclick = () => {
+  send({ type: 'logout' });
+  token = null; try { localStorage.removeItem('mr_token'); } catch {}
+  setCookie(null);
+  manualClose = true; setTimeout(() => { if (ws) ws.close(); }, 200);
+};
+
+// 分頁切到背景就暫停傳輸(省流量、省 Mac 的電)
+document.addEventListener('visibilitychange', () => { if (authed) send({ type: 'pause', on: document.hidden }); });
+
+// ---------- 滑鼠 ----------
+function norm(e) { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }; }
+let moveQueued = null, moveRaf = 0, lastDownAt = 0, lastDownPos = { x: 0, y: 0 }, clickCount = 1;
+canvas.addEventListener('pointermove', e => {
+  moveQueued = norm(e);
+  if (!moveRaf) moveRaf = requestAnimationFrame(() => { moveRaf = 0; if (moveQueued && authed) send({ type: 'mouse', t: 'move', ...moveQueued }); moveQueued = null; });
+});
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault(); canvas.focus();
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
+  const p = norm(e), now = performance.now();
+  clickCount = (now - lastDownAt < 400 && Math.abs(p.x - lastDownPos.x) < 0.01 && Math.abs(p.y - lastDownPos.y) < 0.01) ? Math.min(3, clickCount + 1) : 1;
+  lastDownAt = now; lastDownPos = p;
+  send({ type: 'mouse', t: 'down', x: p.x, y: p.y, button: e.button, clicks: clickCount });
+});
+canvas.addEventListener('pointerup', e => { e.preventDefault(); const p = norm(e); send({ type: 'mouse', t: 'up', x: p.x, y: p.y, button: e.button, clicks: clickCount }); });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  let dx = e.deltaX, dy = e.deltaY;
+  if (e.deltaMode === 1) { dx *= 40; dy *= 40; } else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }
+  send({ type: 'wheel', dx, dy });
+}, { passive: false });
+
+// ---------- 鍵盤 ----------
+function isTypingInUI(e) { const t = e.target; return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA'); }
+function mods(e) { return (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0) | (e.getModifierState && e.getModifierState('CapsLock') ? 16 : 0); }
+window.addEventListener('keydown', e => { if (!authed || isTypingInUI(e) || $('#files').classList.contains('open')) return; e.preventDefault(); send({ type: 'keyev', d: 1, code: e.code, key: e.key, m: mods(e) }); });
+window.addEventListener('keyup', e => { if (!authed || isTypingInUI(e) || $('#files').classList.contains('open')) return; e.preventDefault(); send({ type: 'keyev', d: 0, code: e.code, key: e.key, m: mods(e) }); if (e.key === 'Meta') send({ type: 'release' }); });
+window.addEventListener('blur', () => { if (authed) send({ type: 'release' }); });
+txt.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && txt.value) { send({ type: 'text', text: txt.value }); txt.value = ''; e.preventDefault(); }
+  if (e.key === 'Escape') { txt.blur(); canvas.focus(); }
+});
+
+// ---------- 檔案面板 ----------
+const filesPanel = $('#files'), flist = $('#flist'), curPath = $('#curPath'), prog = $('#prog');
+let fpath = '', fparent = null;
+const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB';
+async function api(path, opts) {
+  const r = await fetch(path, { credentials: 'same-origin', ...opts });
+  if (r.status === 401) { prog.textContent = '登入已失效,請重新連線'; throw new Error('401'); }
+  return r;
+}
+async function loadDir(p) {
+  prog.textContent = '';
+  const r = await api(`/api/list?path=${encodeURIComponent(p)}&hidden=${$('#showHidden').checked ? 1 : 0}`);
+  if (!r.ok) { prog.textContent = '無法讀取這個資料夾'; return; }
+  const d = await r.json();
+  fpath = d.path; fparent = d.parent;
+  curPath.textContent = fpath || '所有位置';
+  $('#upDir').disabled = fparent === null;
+  $('#zipBtn').style.display = fpath ? '' : 'none';
+  $('#upBtn').style.display = fpath ? '' : 'none';
+  flist.innerHTML = '';
+  if (!d.entries.length) flist.innerHTML = '<div class="row" style="color:var(--muted);cursor:default">(空的)</div>';
+  for (const e of d.entries) {
+    const row = document.createElement('div'); row.className = 'row';
+    const icon = e.isDir ? '📁' : e.isPackage ? '📦' : '📄';
+    row.innerHTML = `<span class="ic">${icon}</span><span class="nm" title="${e.name}">${e.name}</span><span class="sz">${e.isDir ? '' : fmtSize(e.size)}</span><button class="small dl">下載</button>`;
+    row.querySelector('.dl').onclick = ev => { ev.stopPropagation(); download(e.path, e.name); };
+    row.onclick = () => e.isDir ? loadDir(e.path) : download(e.path, e.name);
+    flist.appendChild(row);
+  }
+}
+function download(path, name) {
+  prog.textContent = `開始下載 ${name}…(看瀏覽器右上角的下載進度)`;
+  const a = document.createElement('a');
+  a.href = `/api/download?path=${encodeURIComponent(path)}`;
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+async function uploadFiles(fileList) {
+  if (!fpath) { prog.textContent = '請先進到某個資料夾再上傳'; return; }
+  const files = [...fileList];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    await new Promise(resolve => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/api/upload?dir=${encodeURIComponent(fpath)}&name=${encodeURIComponent(f.name)}`);
+      xhr.upload.onprogress = ev => { if (ev.lengthComputable) prog.textContent = `上傳 ${f.name}(${i + 1}/${files.length}):${Math.round(ev.loaded / ev.total * 100)}%`; };
+      xhr.onload = () => { prog.textContent = xhr.status === 200 ? `✓ ${f.name} 上傳完成` : `✗ ${f.name} 上傳失敗(${xhr.status})`; resolve(); };
+      xhr.onerror = () => { prog.textContent = `✗ ${f.name} 上傳失敗`; resolve(); };
+      xhr.send(f);
+    });
+  }
+  loadDir(fpath);
+}
+$('#filesBtn').onclick = () => { filesPanel.classList.toggle('open'); layout(); if (filesPanel.classList.contains('open')) loadDir(fpath); };
+$('#closeFiles').onclick = () => { filesPanel.classList.remove('open'); layout(); canvas.focus(); };
+$('#upDir').onclick = () => { if (fparent !== null) loadDir(fparent); };
+$('#showHidden').onchange = () => loadDir(fpath);
+$('#zipBtn').onclick = () => { if (fpath) download(fpath, fpath.split('/').pop() + '.zip'); };
+$('#upBtn').onclick = () => $('#upInput').click();
+$('#upInput').onchange = () => { uploadFiles($('#upInput').files); $('#upInput').value = ''; };
+const drop = $('#drop');
+['dragenter', 'dragover'].forEach(ev => filesPanel.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => filesPanel.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+filesPanel.addEventListener('drop', e => { if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files); });
+
+// ---------- 偵測這台螢幕的更新率(rAF 頻率) ----------
+let screenHz = 0, rafCount = 0, rafT0 = 0;
+(function measure(t) { if (!rafT0) rafT0 = t; rafCount++; if (t - rafT0 >= 1000) { screenHz = Math.round(rafCount * 1000 / (t - rafT0)); rafCount = 0; rafT0 = t; } requestAnimationFrame(measure); })(performance.now());
+
+// ---------- 統計 ----------
+setInterval(() => { if (authed) send({ type: 'ping', t: performance.now() }); }, 2000);
+setInterval(() => {
+  if (!authed) { statsEl.textContent = ''; return; }
+  const mbps = (rxBytes * 8 / 1e6).toFixed(1);
+  const codecName = { hevc: 'HEVC', h264: 'H.264', jpeg: 'JPEG' }[currentCodec];
+  const br = lastStats && currentCodec !== 'jpeg' ? ` · 位元率 ${(lastStats.bitrateNow / 1000).toFixed(1)}${lastStats.auto ? '(自動,上限 ' + lastStats.bitrateMax / 1000 + ')' : ''} Mbps` : '';
+  statsEl.textContent = `${paintedFrames} fps · ${mbps} Mbps · ${rtt} ms · ${frameW}×${frameH} ${codecName}${br}${screenHz ? ' · 螢幕 ' + screenHz + 'Hz' : ''}`;
+  rxBytes = 0; paintedFrames = 0;
+}, 1000);
+
+// ---------- 啟動 ----------
+$('#connectBtn').onclick = () => connect(true);
+$('#pw').addEventListener('keydown', e => { if (e.key === 'Enter') connect(true); });
+if (token) { $('#loginErr').textContent = ''; connect(false); }
+})();
+</script>
+</body>
+</html>

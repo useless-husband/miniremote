@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Build artifacts
+.build/
+build/
+*.app/
+*.exe
+__pycache__/
+
+# Packaged installers
+安裝包/
+
+# Logs / databases
+*.log
+*.db
+
+# Local machine settings (contain password / personal Tailscale hostnames)
+config.json
+launcher-peers.json
+選擇電腦.html
+
+# Personal setup notes (contain passwords / IPs / email)
+mini-fix/
+
+# Copies of files that already live elsewhere in the repo
+windows/dist/README.md
+windows/dist/index.html
